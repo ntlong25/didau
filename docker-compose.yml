@@ -1,0 +1,34 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      ConnectionStrings__Default: Host=postgres;Database=didau;Username=postgres;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      GooglePlaces__ApiKey: ${GOOGLE_PLACES_API_KEY:-}
+      OpenAi__ApiKey: ${OPENAI_API_KEY:-}
+      OpenAi__Model: ${OPENAI_MODEL:-}
+      Wiki__UserAgent: ${WIKI_USER_AGENT:-}
+      Cors__AllowedOrigins__0: ${APP_ORIGIN:-http://localhost:8088}
+      Database__MigrateOnStartup: 'true'
+    ports:
+      - "127.0.0.1:5000:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: didau
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d didau"]
+      interval: 5s
+      retries: 10
+volumes:
+  pgdata:

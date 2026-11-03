@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+.git/
+.claude/
+.agents/
+app/
+**/appsettings.Development.json
+**/*.log
+.env*
+**/TestResults/

@@ -1,0 +1,267 @@
+openapi: 3.0.3
+info:
+  title: Di Dau API
+  version: 0.1.0
+  description: Backend cho app Đi Đâu. Mọi API key của bên thứ ba chỉ nằm ở server.
+servers:
+  - url: /api
+paths:
+  /cities:
+    get:
+      summary: Danh sách 5 thành phố được hỗ trợ
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/City" }
+  /cities/{cityId}/areas:
+    get:
+      summary: Khu vực/điểm nổi tiếng gợi ý để làm điểm tour
+      parameters:
+        - { name: cityId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PlaceSummary" }
+        "404": { $ref: "#/components/responses/Error" }
+  /geocode:
+    get:
+      summary: Tìm địa chỉ/khu vực trong 5 thành phố được hỗ trợ
+      description: Rate limit dùng chung policy suggestions. Không log tham số q.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2 } }
+        - { name: cityId, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Tối đa 5 kết quả, chỉ trong 5 thành phố
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 5
+                items: { $ref: "#/components/schemas/GeocodeResult" }
+        "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /places/{placeId}:
+    get:
+      summary: Chi tiết địa điểm lấy trực tiếp từ Places (dùng khi mở mục đã lưu)
+      description: Rate limit dùng chung policy suggestions. Không cache giữa các request.
+      parameters:
+        - { name: placeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Place" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /suggestions:
+    post:
+      summary: Gợi ý nhanh địa điểm gần vị trí
+      description: Rate limit 30 req/phút/IP. Vị trí không được lưu lâu dài.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuggestionRequest" }
+      responses:
+        "200":
+          description: OK (có thể rỗng, kèm canExpandRadius)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SuggestionResponse" }
+        "422":
+          description: "Vị trí ngoài 5 thành phố (code: CITY_NOT_SUPPORTED)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+  /tours:
+    post:
+      summary: Tạo (hoặc lấy từ cache) một tour
+      description: Rate limit 5 req/phút/IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TourRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tour" }
+        "422":
+          description: "CITY_NOT_SUPPORTED hoặc INSUFFICIENT_DATA"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+components:
+  responses:
+    Error:
+      description: Lỗi
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    GeoPoint:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat: { type: number }
+        lng: { type: number }
+    City:
+      type: object
+      required: [id, name, center]
+      properties:
+        id: { type: string, enum: [hanoi, hcmc, dalat, nhatrang, danang] }
+        name: { type: string }
+        center: { $ref: "#/components/schemas/GeoPoint" }
+    GeocodeResult:
+      type: object
+      required: [label, location, cityId]
+      properties:
+        label: { type: string }
+        location: { $ref: "#/components/schemas/GeoPoint" }
+        cityId: { type: string }
+    PlaceSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+    Place:
+      type: object
+      required: [id, name, location, mapsUri, fetchedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { type: string, nullable: true, description: "null → hiển thị 'chưa có thông tin'" }
+        location: { $ref: "#/components/schemas/GeoPoint" }
+        openingHoursText: { type: array, items: { type: string }, nullable: true }
+        openNow: { type: boolean, nullable: true }
+        nextOpenAt: { type: string, format: date-time, nullable: true }
+        priceLevel:
+          type: string
+          nullable: true
+          enum: [Inexpensive, Moderate, Expensive, VeryExpensive]
+        rating: { type: number, nullable: true }
+        userRatingCount: { type: integer, nullable: true }
+        mapsUri: { type: string }
+        fetchedAt: { type: string, format: date-time }
+    SuggestionRequest:
+      type: object
+      required: [location, need]
+      properties:
+        location: { $ref: "#/components/schemas/GeoPoint" }
+        need: { type: string, enum: [Coffee, Food, Breakfast, Dinner] }
+        radiusMeters: { type: integer, enum: [2000, 5000], default: 2000 }
+    Suggestion:
+      type: object
+      required: [place, reason, distanceMeters]
+      properties:
+        place: { $ref: "#/components/schemas/Place" }
+        reason: { type: string }
+        distanceMeters: { type: integer }
+    SuggestionResponse:
+      type: object
+      required: [cityId, items, canExpandRadius]
+      properties:
+        cityId: { type: string }
+        items:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/Suggestion" }
+        canExpandRadius: { type: boolean }
+    TourRequest:
+      type: object
+      required: [cityId, duration, interests]
+      properties:
+        cityId: { type: string }
+        areaPlaceId: { type: string, nullable: true }
+        duration: { type: string, enum: [OneHour, HalfDay, FullDay] }
+        interests:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [History, Food, Photo] }
+        variant: { type: integer, minimum: 0, default: 0 }
+        userLocation:
+          allOf: [{ $ref: "#/components/schemas/GeoPoint" }]
+          nullable: true
+    SourceRef:
+      type: object
+      required: [title, url]
+      properties:
+        title: { type: string }
+        url: { type: string }
+    NarrationSection:
+      type: object
+      required: [kind, text, sources]
+      properties:
+        kind: { type: string, enum: [History, Trivia, Tips] }
+        text: { type: string }
+        sources:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/SourceRef" }
+    TourStop:
+      type: object
+      required: [order, place, stayMinutes, narration]
+      properties:
+        order: { type: integer }
+        place: { $ref: "#/components/schemas/Place" }
+        stayMinutes: { type: integer }
+        narration:
+          type: array
+          items: { $ref: "#/components/schemas/NarrationSection" }
+    Leg:
+      type: object
+      required: [toOrder, mode, distanceMeters, minutes, directionsUrl]
+      properties:
+        fromOrder: { type: integer, nullable: true, description: "null = vị trí người dùng" }
+        toOrder: { type: integer }
+        mode: { type: string, enum: [Walk, Ride] }
+        distanceMeters: { type: integer }
+        minutes: { type: integer }
+        directionsUrl: { type: string }
+    Tour:
+      type: object
+      required: [id, cityId, duration, interests, variant, start, stops, legs, totalMinutes, generatedAt]
+      properties:
+        id: { type: string }
+        cityId: { type: string }
+        areaPlaceId: { type: string, nullable: true }
+        duration: { type: string, enum: [OneHour, HalfDay, FullDay] }
+        interests: { type: array, items: { type: string } }
+        variant: { type: integer }
+        start: { type: string, enum: [UserLocation, FirstStop] }
+        stops:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/TourStop" }
+        legs:
+          type: array
+          items: { $ref: "#/components/schemas/Leg" }
+        totalMinutes: { type: integer }
+        generatedAt: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [CITY_NOT_SUPPORTED, INSUFFICIENT_DATA, VALIDATION_ERROR, RATE_LIMITED, UPSTREAM_ERROR, NOT_FOUND]
+        message: { type: string, description: Thông báo tiếng Việt cho người dùng }
