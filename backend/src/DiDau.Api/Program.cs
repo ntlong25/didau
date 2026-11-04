@@ -3,7 +3,9 @@ using System.Threading.RateLimiting;
 using DiDau.Core;
 using DiDau.Core.Abstractions;
 using DiDau.Api.Endpoints;
-using DiDau.Infrastructure.GooglePlaces;
+using DiDau.Infrastructure;
+using DiDau.Infrastructure.Goong;
+using DiDau.Infrastructure.Osm;
 using DiDau.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.RateLimiting;
@@ -15,14 +17,20 @@ builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(o =
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<DiDau.Core.Suggestions.SuggestionService>();
-builder.Services.AddScoped(sp => new DiDau.Core.Tours.TourService(sp.GetRequiredService<IPlacesClient>(), sp.GetRequiredService<IWikiClient>(),
+builder.Services.AddScoped(sp => new DiDau.Core.Tours.TourService(sp.GetRequiredService<IPlacesClient>(), sp.GetRequiredService<IAttractionsClient>(), sp.GetRequiredService<IWikiClient>(),
     sp.GetRequiredService<INarrationClient>(), sp.GetRequiredService<ICacheStore>(), sp.GetRequiredService<IClock>(), builder.Configuration["Narration:PromptVersion"] ?? "extractive-v1"));
 builder.Services.AddDbContextFactory<DiDauDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Default") ?? "Host=localhost;Database=didau;Username=postgres"));
 builder.Services.AddSingleton<ICacheStore, PostgresCacheStore>();
 builder.Services.AddHostedService<CacheCleanupService>();
 builder.Services.AddHttpClient("places", c => c.Timeout = TimeSpan.FromSeconds(5));
-builder.Services.AddScoped<IPlacesClient>(sp => new GooglePlacesClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("places"),
+builder.Services.AddHttpClient("overpass", c => c.Timeout = TimeSpan.FromSeconds(25));
+// Goong adapter is request-scoped: no Goong content survives one HTTP request.
+builder.Services.AddScoped(sp => new GoongPlacesClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("places"),
     sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<IClock>()));
+builder.Services.AddScoped(sp => new OverpassClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("overpass"),
+    sp.GetRequiredService<ICacheStore>(), sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<IClock>()));
+builder.Services.AddScoped<IAttractionsClient>(sp => sp.GetRequiredService<OverpassClient>());
+builder.Services.AddScoped<IPlacesClient, RoutingPlacesClient>();
 builder.Services.AddHttpClient<IWikiClient, DiDau.Infrastructure.Wiki.WikiClient>(c => c.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddHttpClient<INarrationClient, DiDau.Infrastructure.OpenAi.OpenAiNarrationClient>(c => c.Timeout = TimeSpan.FromSeconds(15));
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.None);

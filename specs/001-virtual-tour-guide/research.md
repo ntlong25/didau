@@ -48,6 +48,21 @@
 
 ## 5. Nguồn dữ liệu
 
+> **Cập nhật 2026-11-03**: Google Places không dùng được ở VN → thay bằng **OpenStreetMap
+> (Overpass)** cho tour và danh sách khu vực nổi tiếng, **Goong.io** cho gợi ý nhanh và tìm địa
+> chỉ. Nút "Chỉ đường" vẫn mở Google Maps bằng URL (không gọi API Google). Chi tiết địa điểm được
+> định tuyến theo tiền tố ID: `osm:{type}/{id}` → Overpass, còn lại → Goong (`RoutingPlacesClient`).
+> - **Goong**: `Place/AutoComplete` (input, location, radius tính bằng km — chưa xác minh trên tài
+>   liệu chính thức) + `Place/Detail` cho tọa độ/địa chỉ. Không có giờ mở cửa, giá, rating → hiển
+>   thị "chưa có thông tin" (FR-003); "lý do nên đi" là câu trung tính. Điều khoản lưu trữ chưa
+>   xác minh → giữ chính sách không cache nội dung giữa các request, chỉ cache place ID.
+> - **OSM/Overpass**: lọc theo sở thích (historic/museum/place_of_worship; restaurant/cafe/
+>   marketplace; attraction/viewpoint/artwork/park). Tag `wikidata` dùng để nối thẳng sang
+>   Wikipedia (`IWikiClient.FindById`), tìm theo tên chỉ là dự phòng. `opening_hours` hiển thị
+>   nguyên văn, không suy ra đang mở/đóng. Dữ liệu ODbL nên được cache trong `osm_cache`
+>   (tìm kiếm 24 giờ, chi tiết 7 ngày) và phải ghi "© OpenStreetMap contributors".
+> - Phần Google Places bên dưới chỉ còn giá trị lịch sử.
+
 - **Quán/địa điểm**: Google Places API (New) — Nearby Search, Text Search, Place Details. Dùng
   field mask để chỉ lấy `id, displayName, formattedAddress, location, types, regularOpeningHours,
   priceLevel, rating, userRatingCount, businessStatus, editorialSummary, googleMapsUri` (giảm chi phí).
@@ -76,6 +91,8 @@
 
 ## 7. Cache & khóa cache
 
+> Cập nhật 2026-11-04: Các điều khoản Google bên dưới là lịch sử, không áp dụng cho provider hiện tại. Goong chỉ gộp chi tiết trong request; OSM lưu tìm kiếm 24 giờ, chi tiết tối đa 7 ngày trong `osm_cache`. Search tái sử dụng dữ liệu cho GetDetails, không gọi Overpass từng stop. Khóa tour và nearby được đổi namespace khi chuyển provider để tránh dùng ID Google cũ.
+
 - **Ràng buộc điều khoản Google Maps Platform** (đã kiểm tra 2026-11-03 trên Service Specific Terms
   bản 2024-05-22, mục 5 Places API, và trang Places API Policies):
   - 5.4: chỉ được cache tạm `lat`/`lng` tối đa 30 ngày liên tục; `place_id` được lưu vô thời hạn.
@@ -90,9 +107,9 @@
     và facts từ Wikipedia/Wikidata; KHÔNG chứa nội dung Places khác. Khi trả tour, chi tiết địa
     điểm được lấy lại qua `IPlacesClient.GetDetails` (song song, qua cache bộ nhớ). Không gồm vị
     trí người dùng: đoạn từ vị trí người dùng tới điểm đầu được tính khi trả về, không lưu.
-  - Chi tiết địa điểm: KHÔNG lưu PostgreSQL và KHÔNG cache giữa các request (điều khoản không cho
-    phép cache nội dung ngoài lat/lng và place_id, kể cả trong bộ nhớ). Chỉ gộp các lần gọi trùng
-    trong cùng một request. Nhờ đó dữ liệu hiển thị luôn mới, thỏa FR-014a.
+  - Chi tiết Goong: không lưu giữa request; chỉ gộp các lần gọi trùng trong request. OSM được
+    lưu trong `osm_cache`; kết quả tìm kiếm có đủ tọa độ node và center way/relation, được tái
+    sử dụng khi hydrate tour. Phản hồi Overpass có `remark` báo lỗi không được cache như thành công.
   - `nearby_cache`: khóa = (lat, lng làm tròn 0,002° ≈ 200 m, need, radius), lưu danh sách place
     ID, TTL 24 giờ.
   - Chi phí: tour lấy từ cache tốn thêm N lần gọi Place Details (N = số stop) nhưng vẫn bỏ được lần
@@ -113,13 +130,14 @@
 ## 9. Rate limit & bí mật
 
 - **Decision**: `AddRateLimiter` fixed window theo IP: 30 req/phút cho `/api/suggestions`, 5 req/phút
-  cho `POST /api/tours`. Key đọc từ biến môi trường `GooglePlaces__ApiKey`, `OpenAi__ApiKey`;
+  cho `POST /api/tours`. Key đọc từ biến môi trường `Goong__ApiKey`, `OpenAi__ApiKey`;
   dev dùng `dotnet user-secrets`; có `appsettings.Example.json` không chứa giá trị thật.
   CORS chỉ cho origin của PWA.
 
 ## 10. Offline cho mục đã lưu
 
-- **Decision**: Lưu bản chụp JSON đầy đủ (tour/địa điểm) vào `localStorage` qua `shared_preferences`.
-  Service worker mặc định của Flutter cache app shell, nên app mở được khi offline.
+- **Decision**: `shared_preferences` lưu ID, tọa độ tối đa 30 ngày, cấu trúc tour và lời dẫn Wiki.
+  Không lưu tên/địa chỉ/giờ/giá hoặc đoạn đường từ vị trí cá nhân. Online tải lại chi tiết và
+  URL chỉ đường; offline vẫn đọc lời dẫn. `build-web.ps1` tạo service worker riêng và cache font cục bộ.
 - **Giới hạn**: `localStorage` ~5 MB, đủ cho hàng trăm tour. Xóa dữ liệu trình duyệt thì mất,
   đúng giả định của spec.

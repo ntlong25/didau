@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-class GoogleAttribution extends StatelessWidget {
-  const GoogleAttribution({super.key});
+class SourceAttribution extends StatelessWidget {
+  const SourceAttribution({super.key});
   @override
   Widget build(BuildContext context) => const Padding(
     padding: EdgeInsets.symmetric(vertical: 8),
     child: Text(
-      'Google Maps',
-      softWrap: false,
+      'Dữ liệu địa điểm: Goong · © OpenStreetMap contributors',
+      softWrap: true,
       style: TextStyle(
         fontFamily: 'RobotoLocal',
         fontSize: 14,

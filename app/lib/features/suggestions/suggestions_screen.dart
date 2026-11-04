@@ -3,7 +3,7 @@ import '../../api/api_client.dart';
 import '../../api/models.dart';
 import '../../widgets/error_retry.dart';
 import '../../widgets/info_value.dart';
-import '../../widgets/google_attribution.dart';
+import '../../widgets/source_attribution.dart';
 import 'location_picker.dart';
 import 'place_detail_screen.dart';
 
@@ -42,7 +42,7 @@ class _SuggestionsScreenState extends State<SuggestionsScreen> {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      if (result != null) const GoogleAttribution(),
+      if (result != null) const SourceAttribution(),
       Text(
         'Hôm nay, đi đâu?',
         style: Theme.of(context).textTheme.headlineMedium,
@@ -50,6 +50,7 @@ class _SuggestionsScreenState extends State<SuggestionsScreen> {
       const Text('Tìm một chỗ gần bạn để dừng chân.'),
       const SizedBox(height: 16),
       LocationPicker(
+        key: const ValueKey('suggestions-location-picker'),
         api: widget.api,
         onSelected: (p) => setState(() {
           location = p;

@@ -26,10 +26,10 @@ const server = http.createServer(async (req, res) => {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   const place = {id:'fixture-place',name:'Địa điểm kiểm thử',address:'Địa chỉ kiểm thử',location:{lat:21.0288,lng:105.852},mapsUri:'https://www.google.com/maps',openingHoursText:null,openNow:null,nextOpenAt:null,priceLevel:null,rating:null,userRatingCount:null,fetchedAt:'2026-11-03T00:00:00Z'};
-  const tour = {id:'fixture-tour',cityId:'hanoi',duration:'OneHour',interests:['History'],variant:0,start:'FirstStop',stops:[{order:1,place,stayMinutes:20,narration:[]}],legs:[],totalMinutes:20,generatedAt:'2026-11-03T00:00:00Z'};
+  const tour = {id:'fixture-tour',cityId:'hanoi',duration:'OneHour',interests:['History'],variant:0,start:'FirstStop',stops:[{order:1,place,stayMinutes:20,narration:[{kind:'History',text:'Lời dẫn kiểm thử offline.',sources:[]}]}],legs:[],totalMinutes:20,generatedAt:'2026-11-03T00:00:00Z'};
   await context.route('**/api/**', async route => {
     const url = route.request().url();
-    const body = url.endsWith('/cities') ? [{id:'hanoi',name:'Hà Nội',center:place.location}] : url.includes('/geocode') ? [{label:place.name,location:place.location,cityId:'hanoi'}] : url.includes('/areas') ? [place] : url.endsWith('/suggestions') ? {cityId:'hanoi',items:[{place,reason:'Dữ liệu kiểm thử.',distanceMeters:100}],canExpandRadius:true} : tour;
+    const body = url.includes('/places/') ? place : url.endsWith('/cities') ? [{id:'hanoi',name:'Hà Nội',center:place.location}] : url.includes('/geocode') ? [{label:place.name,location:place.location,cityId:'hanoi'}] : url.includes('/areas') ? [place] : url.endsWith('/suggestions') ? {cityId:'hanoi',items:[{place,reason:'Dữ liệu kiểm thử.',distanceMeters:100}],canExpandRadius:true} : tour;
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
   });
   try {
@@ -50,18 +50,23 @@ const server = http.createServer(async (req, res) => {
     await page.getByRole('button', {name:'Lưu',exact:true}).click();
     await page.getByRole('button', {name:'Đã lưu',exact:true}).waitFor();
     await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    const stored = await page.evaluate(() => localStorage.getItem('flutter.saved_items_v1'));
+    assert.ok(stored && !stored.includes('Địa điểm kiểm thử') && !stored.includes('Địa chỉ kiểm thử'));
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
     await context.unroute('**/api/**');
     await context.setOffline(true);
     await page.reload();
     await page.locator('flt-semantics-placeholder').evaluate(el => el.click());
     await page.getByRole('tab', {name:'Đã lưu',exact:true}).click();
-    await page.getByRole('button', {name:/^Tour Địa điểm kiểm thử/}).waitFor();
+    await page.getByRole('button', {name:/^Tour Hà Nội/}).waitFor();
     await page.screenshot({path:path.resolve(__dirname,'../artifacts/saved-offline-mobile.png')});
-    await page.getByRole('button', {name:/^Tour Địa điểm kiểm thử/}).click();
+    await page.getByRole('button', {name:/^Tour Hà Nội/}).click();
     await page.getByText('1 điểm dừng • 20 phút', {exact:true}).waitFor();
+    await page.getByRole('button', {name:/Cần kết nối mạng để xem tên/}).click();
+    await page.getByText('Lời dẫn kiểm thử offline.', {exact:true}).waitFor();
     await page.goBack();
-    await page.getByRole('button', {name:/^Địa điểm kiểm thử/}).click();
+    await page.goBack();
+    await page.getByRole('button', {name:/^Địa điểm đã lưu/}).click();
     await page.getByRole('button', {name:'Đã lưu',exact:true}).click();
     await page.getByRole('button', {name:'Lưu',exact:true}).waitFor();
     assert.deepEqual(errors, []);

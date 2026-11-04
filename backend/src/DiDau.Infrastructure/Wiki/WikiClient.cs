@@ -43,6 +43,24 @@ public sealed class WikiClient(HttpClient http, ICacheStore cache, IConfiguratio
         return match;
     }
 
+    public async Task<WikiMatch?> FindById(string wikidataId, CancellationToken ct = default)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(wikidataId, "^Q[0-9]+$")) return null;
+        var key = "id:" + wikidataId;
+        var cached = await cache.Get<MatchResult>("wiki_cache", key, ct);
+        if (cached is not null) return cached.Match;
+        using var entities = await GetJson("https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=sitelinks&ids=" + wikidataId, ct);
+        WikiMatch? match = null;
+        if (entities is not null && entities.RootElement.GetProperty("entities").TryGetProperty(wikidataId, out var entity)
+            && entity.TryGetProperty("sitelinks", out var links))
+        {
+            string? Title(string site) => links.TryGetProperty(site, out var link) ? link.GetProperty("title").GetString() : null;
+            match = new(wikidataId, Title("viwiki"), Title("enwiki"));
+        }
+        await cache.Set("wiki_cache", key, new MatchResult(match), CacheTtl.Wiki, ct);
+        return match;
+    }
+
     public async Task<WikiSummary?> GetSummary(WikiMatch match, CancellationToken ct = default)
     {
         var cached = await cache.Get<WikiSummary>("wiki_cache", match.Id, ct);

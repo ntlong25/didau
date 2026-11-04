@@ -95,12 +95,13 @@ Validation: vị trí phải thuộc một City (FR-010a); bán kính 2000 hoặ
 
 | Table | Key | Columns | TTL |
 |-------|-----|---------|-----|
+| `osm_cache` | `search:<hash>` hoặc `place:osm:{type}/{id}` | `payload jsonb` = `Place[]` từ OpenStreetMap (ODbL cho phép lưu) | tìm kiếm 24 giờ, chi tiết 7 ngày |
 | `tour_cache` | `key` (text, SHA-256) | `payload jsonb` = `{ stops: [{placeId, location, order, stayMinutes, narration[]}], facts[] }` — không chứa nội dung Places khác; `created_at`, `expires_at` | 7 ngày |
 | `nearby_cache` | `key` (lat/lng làm tròn + need + radius) | `place_ids text[]`, `expires_at` | 24 giờ |
 | `wiki_cache` | `key` (QID hoặc lang:title) | `payload jsonb`, `expires_at` | 30 ngày |
 
-Chi tiết địa điểm (Place) không lưu PostgreSQL và không cache giữa các request; chỉ `place_id`
-(vô thời hạn) và tọa độ (≤ 30 ngày) được lưu (điều khoản Google Places — xem research.md §7).
+Chi tiết Goong không lưu giữa request. Chi tiết OSM lưu trong `osm_cache`; dữ liệu lấy từ
+search có thể được dùng lại cho chi tiết (TTL 24 giờ), còn truy vấn riêng có TTL 7 ngày.
 
 Không bảng nào chứa vị trí chính xác hay định danh người dùng/thiết bị. Bản ghi hết hạn bị bỏ qua
 khi đọc và được dọn bằng job định kỳ đơn giản (hosted service, mỗi ngày).
@@ -115,6 +116,10 @@ Key `saved_items_v1` → JSON array của `SavedItem`:
 | kind | `tour` \| `place` | |
 | title | string | |
 | savedAt | ISO datetime | Danh sách sắp giảm dần (FR-032) |
-| snapshot | Tour \| Place JSON | Bản chụp đầy đủ để xem offline (FR-031) |
+| snapshot | JSON tối giản | Chỉ ID, tọa độ ≤ 30 ngày, cấu trúc tour và lời dẫn Wiki; chi tiết provider tải lại khi mở |
+
+Tour lưu có `start=FirstStop`, bỏ leg từ vị trí cá nhân và trừ thời gian leg đó khỏi tổng.
+Tên mục lưu là nhãn chung hoặc tên thành phố; không chứa tên provider. Tọa độ hết hạn thì bỏ
+URL chỉ đường; hydrate online tạo lại URL từ tọa độ vừa tải. Snapshot cũ được compact khi mở Đã lưu.
 
 Trạng thái: chưa lưu → đã lưu (thêm) → chưa lưu (xóa). Lưu lại cùng `id` thì ghi đè bản chụp.

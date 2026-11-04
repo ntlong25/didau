@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../api/api_client.dart';
 import '../../api/models.dart';
 import '../../widgets/error_retry.dart';
-import '../../widgets/google_attribution.dart';
+import '../../widgets/source_attribution.dart';
 import '../suggestions/place_detail_screen.dart';
 import '../tours/tour_screen.dart';
 import 'saved_snapshot.dart';
@@ -19,6 +19,7 @@ class _SavedScreenState extends State<SavedScreen> {
   final store = SavedStore();
   List<SavedItem>? items;
   Object? error;
+  String? openingId;
   @override
   void initState() {
     super.initState();
@@ -54,6 +55,8 @@ class _SavedScreenState extends State<SavedScreen> {
   }
 
   Future<void> open(SavedItem item) async {
+    if (openingId != null) return;
+    setState(() => openingId = item.id);
     var snapshot = item.snapshot;
     var offline = false;
     try {
@@ -62,6 +65,7 @@ class _SavedScreenState extends State<SavedScreen> {
       offline = true;
     }
     if (!mounted) return;
+    setState(() => openingId = null);
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -91,7 +95,7 @@ class _SavedScreenState extends State<SavedScreen> {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      if (items?.isNotEmpty == true) const GoogleAttribution(),
+      if (items?.isNotEmpty == true) const SourceAttribution(),
       Text(
         'Những nơi muốn quay lại',
         style: Theme.of(context).textTheme.headlineMedium,
@@ -119,9 +123,15 @@ class _SavedScreenState extends State<SavedScreen> {
         ...items!.map(
           (item) => Card(
             child: ListTile(
-              leading: Icon(
-                item.kind == 'tour' ? Icons.route : Icons.place_outlined,
-              ),
+              leading: openingId == item.id
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(),
+                    )
+                  : Icon(
+                      item.kind == 'tour' ? Icons.route : Icons.place_outlined,
+                    ),
               title: Text(names[item.id] ?? item.title),
               subtitle: Text(
                 'Đã lưu ${item.savedAt.toLocal().day}/${item.savedAt.toLocal().month}/${item.savedAt.toLocal().year}',
@@ -131,7 +141,7 @@ class _SavedScreenState extends State<SavedScreen> {
                 icon: const Icon(Icons.bookmark_remove_outlined),
                 onPressed: () => remove(item),
               ),
-              onTap: () => open(item),
+              onTap: openingId == null ? () => open(item) : null,
             ),
           ),
         ),

@@ -48,6 +48,32 @@ namespace DiDau.Infrastructure.Persistence.Migrations
                     b.ToTable("nearby_cache", (string)null);
                 });
 
+            modelBuilder.Entity("osm_cache", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("text")
+                        .HasColumnName("key");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.ToTable("osm_cache", (string)null);
+                });
+
             modelBuilder.Entity("tour_cache", b =>
                 {
                     b.Property<string>("Key")

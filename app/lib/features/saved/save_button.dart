@@ -54,7 +54,7 @@ class _SaveButtonState extends State<SaveButton> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Không thể lưu. Bộ nhớ trình duyệt có thể đã đầy hoặc bị chặn.',
+              'Không thể lưu. Bộ nhớ thiết bị có thể đã đầy hoặc bị chặn.',
             ),
           ),
         );

@@ -16,6 +16,18 @@ using NSubstitute;
 namespace DiDau.Core.Tests.Integration;
 public class ApiTests
 {
+    [Theory]
+    [InlineData("osm:node/42")]
+    [InlineData("goong/base64+id==")]
+    public async Task SavedPlaceIdsWithSlashesRoundTrip(string id)
+    {
+        await using var factory = new Factory();
+        factory.Places.GetDetails(id, Arg.Any<CancellationToken>()).Returns(TestData.Place(id));
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/api/places/" + Uri.EscapeDataString(id));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await factory.Places.Received(1).GetDetails(id, Arg.Any<CancellationToken>());
+    }
     [Fact]
     public async Task GeocodeFiltersToCityAndLimitsFive()
     {
@@ -45,11 +57,13 @@ public class ApiTests
     private sealed class Factory : WebApplicationFactory<Program>
     {
         public IPlacesClient Places { get; } = Substitute.For<IPlacesClient>();
+        public IAttractionsClient Attractions { get; } = Substitute.For<IAttractionsClient>();
         protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.ConfigureServices(services =>
         {
             var cleanup = services.FirstOrDefault(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(CacheCleanupService));
             if (cleanup is not null) services.Remove(cleanup);
             services.RemoveAll<IPlacesClient>(); services.AddSingleton(Places);
+            services.RemoveAll<IAttractionsClient>(); services.AddSingleton(Attractions);
             services.RemoveAll<ICacheStore>();
             var cache = Substitute.For<ICacheStore>();
             cache.Get<string[]>(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string[]?)null);

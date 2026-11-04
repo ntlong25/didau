@@ -189,6 +189,7 @@ viết trước và phải FAIL trước khi cài đặt.
 - [X] T070 [P] Hiển thị ghi công Google ("Google Maps" theo hướng dẫn attribution của Places API) ở mọi màn hình có dữ liệu Places không kèm bản đồ Google (Service Specific Terms 5.2) trong `app/lib/widgets/google_attribution.dart`, dùng ở `suggestions_screen.dart`, `place_detail_screen.dart`, `tour_screen.dart`, `stop_screen.dart`, `saved_screen.dart`
 - [X] T069 [P] Đổi tên lỗi domain `CitiesNotSupported` → `CityNotSupported` (vẫn ánh xạ ra mã API `CITY_NOT_SUPPORTED`) trong `backend/src/DiDau.Core/` và `backend/tests/DiDau.Core.Tests/`
 - [X] T071 [US3] Mục đã lưu chỉ giữ `place_id`, tọa độ (xóa sau 30 ngày) và dữ liệu tour của app; tên/địa chỉ/giờ/giá tải lại qua `GET /api/places/{placeId}` khi mở; snapshot đầy đủ cũ được làm gọn khi đọc (Places terms 5.4) trong `app/lib/features/saved/` và `backend/src/DiDau.Api/Endpoints/PlacesEndpoints.cs`
+- [X] T072 Thay Google Places bằng OSM Overpass (tour, khu vực nổi tiếng; `osm_cache` + migration `AddOsmCache`; nối Wikipedia qua tag `wikidata`) và Goong.io (gợi ý nhanh, geocode, chi tiết); định tuyến chi tiết theo tiền tố ID trong `backend/src/DiDau.Infrastructure/RoutingPlacesClient.cs`; ghi công "Goong · © OpenStreetMap contributors" trong `app/lib/widgets/source_attribution.dart`; nút Chỉ đường vẫn mở Google Maps bằng URL
 
 ---
 
@@ -254,6 +255,17 @@ Task: "OpenAiNarrationClient in backend/src/DiDau.Infrastructure/OpenAi/OpenAiNa
 ---
 
 ## Notes
+
+### Android native — yêu cầu bổ sung 2026-11-04
+
+- [X] T076 Thêm Android runner, quyền Internet/GPS foreground, biểu tượng/tên Đi Đâu và cấu hình API local qua 10.0.2.2; giữ nền tảng web.
+- [X] T077 Build APK debug/release, cài trên máy ảo và kiểm thử GPS, gợi ý, tour, lưu/bỏ lưu, offline bằng integration test native; ghi rõ giới hạn API fixture và release signing.
+
+### Kiểm tra sau bàn giao Claude — 2026-11-04
+
+- [X] T073 Sửa hồi quy provider: cache gợi ý giữ keyword match khi Goong details không có type; giải mã ID chứa slash; đổi namespace cache sau chuyển provider; Overpass xuất tọa độ node, tái sử dụng search và không cache phản hồi lỗi từng phần. Kiểm chứng bằng backend regression tests.
+- [X] T074 Sửa mục đã lưu: loại vị trí xuất phát, whitelist trường được lưu, bỏ tên provider trong title, vô hiệu hóa chỉ đường thiếu tọa độ và khôi phục khi hydrate; chống mở trùng khi đang tải. Kiểm chứng bằng Flutter tests và browser smoke offline.
+- [X] T075 Đồng bộ README, plan, research, data-model và quickstart theo Goong/OSM và lưu tối giản; cập nhật kiểm thử browser và kết quả kiểm tra. T058/T064/T065/T066 vẫn cần môi trường hoặc thiết bị thật.
 
 - [P] = khác file, không phụ thuộc
 - Mọi API ngoài chỉ gọi qua interface trong `DiDau.Core/Abstractions` → test không gọi mạng

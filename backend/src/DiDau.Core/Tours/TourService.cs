@@ -5,28 +5,28 @@ using DiDau.Core.Narration;
 using DiDau.Core.Places;
 
 namespace DiDau.Core.Tours;
-public sealed class TourService(IPlacesClient places, IWikiClient wiki, INarrationClient ai, ICacheStore cache, IClock clock, string promptVersion)
+public sealed class TourService(IPlacesClient places, IAttractionsClient attractions, IWikiClient wiki, INarrationClient ai, ICacheStore cache, IClock clock, string promptVersion)
 {
+    public const int CityRadiusMeters = 5000, AreaRadiusMeters = 2500;
     public async Task<Tour> Get(TourRequest request, CancellationToken ct = default)
     {
         var city = CityLocator.Require(request.CityId);
         if (!Enum.IsDefined(request.Duration) || request.Interests is null || request.Interests.Length == 0 || request.Interests.Any(i => !Enum.IsDefined(i)) || request.Variant < 0 || request.UserLocation is { IsValid: false })
             throw DomainException.Validation("Hãy chọn thời lượng, sở thích và vị trí hợp lệ.");
         var interests = request.Interests.Distinct().Order().ToArray();
-        var key = CacheKey.Tour(city.Id, request.AreaPlaceId, request.Duration.ToString(), interests.Select(i => i.ToString()), request.Variant, "wiki-only-v2:" + promptVersion);
+        var key = CacheKey.Tour(city.Id, request.AreaPlaceId, request.Duration.ToString(), interests.Select(i => i.ToString()), request.Variant, "osm-v3:" + promptVersion);
         var cached = await cache.Get<CachedTour>("tour_cache", key, ct);
         if (cached is null)
         {
             var center = city.Center;
-            var areaName = city.Name;
+            var radius = CityRadiusMeters;
             if (!string.IsNullOrWhiteSpace(request.AreaPlaceId))
             {
                 var area = await places.GetDetails(request.AreaPlaceId, ct);
                 if (area is null || !CityLocator.Contains(city, area.Location)) throw DomainException.InsufficientData();
-                center = area.Location; areaName = area.Name + " " + city.Name;
+                center = area.Location; radius = AreaRadiusMeters;
             }
-            var queries = interests.Select(i => (i switch { Interest.History => "di tích bảo tàng ", Interest.Food => "ẩm thực nhà hàng ", _ => "điểm tham quan công viên " }) + areaName);
-            var candidates = (await Task.WhenAll(queries.Select(q => places.TextSearch(q, center, ct)))).SelectMany(p => p)
+            var candidates = (await attractions.Search(center, radius, interests, ct))
                 .Where(p => CityLocator.Contains(city, p.Location)).DistinctBy(p => p.Id).ToArray();
             var route = RouteBuilder.Build(candidates, request.Duration, interests, request.Variant);
             var facts = new List<Fact>();
@@ -37,7 +37,10 @@ public sealed class TourService(IPlacesClient places, IWikiClient wiki, INarrati
                 await gate.WaitAsync(ct);
                 try
                 {
-                    var match = await wiki.FindByNameNear(stop.Place.Name, stop.Place.Location, ct);
+                    // OSM's wikidata tag is an exact link; name search is only a fallback.
+                    var match = stop.Place.WikidataId is { } qid
+                        ? await wiki.FindById(qid, ct)
+                        : await wiki.FindByNameNear(stop.Place.Name, stop.Place.Location, ct);
                     var summary = match is null ? null : await wiki.GetSummary(match, ct);
                     // English fallback is retained by the adapter, but never presented as Vietnamese narration.
                     return summary is { Language: "vi" } ? new Fact(stop.Place.Id + "-wiki", stop.Place.Id, summary.Text, summary.Url, FactKind.History, summary.Title) : null;

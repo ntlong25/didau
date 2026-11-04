@@ -213,5 +213,6 @@ xuất hiện trong "Đã lưu" và mở được nội dung đầy đủ.
 - Cần kết nối Internet để tạo tour và gợi ý mới.
 - Ngoài phạm vi bản đầu: đặt chỗ, thanh toán, đăng nhập, chia sẻ xã hội, đánh giá/bình luận của
   người dùng, đa ngôn ngữ ngoài tiếng Việt, dẫn đường thời gian thực, thuyết minh bằng giọng nói.
+- Nguồn POI hiện tại (Goong) không có giờ mở cửa, mức giá, rating; các trường này hiển thị "chưa có thông tin" cho tới khi có nguồn bổ sung.
 - Phụ thuộc: một hoặc nhiều nguồn dữ liệu địa điểm/bản đồ và nguồn thông tin lịch sử/văn hoá có
   thật cho các điểm du lịch Việt Nam.

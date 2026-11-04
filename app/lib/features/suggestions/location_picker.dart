@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../location/current_location.dart';
 import '../../api/api_client.dart';
 import '../../api/models.dart';
 import '../../widgets/error_retry.dart';
-import '../../widgets/google_attribution.dart';
+import '../../widgets/source_attribution.dart';
 
 class LocationPicker extends StatefulWidget {
   final ApiClient api;
@@ -68,11 +69,7 @@ class _LocationPickerState extends State<LocationPicker> {
           'Chưa có quyền vị trí. Bạn có thể chọn thành phố và tìm địa chỉ bên dưới.',
         );
       }
-      final p = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          timeLimit: Duration(seconds: 12),
-        ),
-      );
+      final p = await currentLocation();
       if (mounted) {
         setState(() => selected = 'Vị trí hiện tại');
         widget.onSelected(GeoPoint(p.latitude, p.longitude));
@@ -152,7 +149,7 @@ class _LocationPickerState extends State<LocationPicker> {
       if (busy) const LinearProgressIndicator(),
       if (error != null)
         ErrorRetry(error!, cities == null ? loadCities : search),
-      if (results.isNotEmpty) const GoogleAttribution(),
+      if (results.isNotEmpty) const SourceAttribution(),
       ...results.map(
         (area) => ListTile(
           title: Text(area['label']),

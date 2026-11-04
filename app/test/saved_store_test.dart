@@ -40,12 +40,18 @@ void main() {
     },
   );
   test('Only place id and coordinates are persisted for places', () async {
-    await SavedStore().save('place', 'p1', 'Địa điểm đã lưu', _fullPlace);
+    await SavedStore().save(
+      'place',
+      'p1',
+      'Provider name must not persist',
+      _fullPlace,
+    );
     final raw = (await SharedPreferences.getInstance()).getString(
       SavedStore.key,
     )!;
     final snapshot = (jsonDecode(raw) as List).single['snapshot'] as Map;
     expect(snapshot.keys.toSet(), {'id', 'location'});
+    expect(raw, isNot(contains('Provider name must not persist')));
   });
   test('Tour stops keep narration but drop Places content', () async {
     await SavedStore().save('tour', 't1', 'Tour Hà Nội', {
@@ -72,27 +78,30 @@ void main() {
     expect(stop['narration'], isNotEmpty);
     expect(raw.contains('Hàng Bạc'), isFalse);
   });
-  test('Coordinates are purged after 30 days and old snapshots compacted', () async {
-    SharedPreferences.setMockInitialValues({
-      SavedStore.key: jsonEncode([
-        {
-          'id': 'place:p1',
-          'kind': 'place',
-          'title': 'Quán',
-          'savedAt': '2026-09-01T00:00:00.000Z',
-          'snapshot': _fullPlace,
-        },
-      ]),
-    });
-    final store = SavedStore();
-    final item = (await store.list(now: DateTime.utc(2026, 11, 4))).single;
-    expect(item.snapshot.keys.toSet(), {'id'});
-    await store.compact();
-    final raw = (await SharedPreferences.getInstance()).getString(
-      SavedStore.key,
-    )!;
-    expect(raw.contains('Hàng Bạc'), isFalse);
-  });
+  test(
+    'Coordinates are purged after 30 days and old snapshots compacted',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        SavedStore.key: jsonEncode([
+          {
+            'id': 'place:p1',
+            'kind': 'place',
+            'title': 'Quán',
+            'savedAt': '2026-09-01T00:00:00.000Z',
+            'snapshot': _fullPlace,
+          },
+        ]),
+      });
+      final store = SavedStore();
+      final item = (await store.list(now: DateTime.utc(2026, 11, 4))).single;
+      expect(item.snapshot.keys.toSet(), {'id'});
+      await store.compact();
+      final raw = (await SharedPreferences.getInstance()).getString(
+        SavedStore.key,
+      )!;
+      expect(raw.contains('Hàng Bạc'), isFalse);
+    },
+  );
   test('Corrupt persisted value does not crash', () async {
     SharedPreferences.setMockInitialValues({
       'saved_items_v1': '[{"broken":true}]',

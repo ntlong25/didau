@@ -5,7 +5,7 @@ Flutter PWA tiếng Việt + ASP.NET Core 8, hỗ trợ gợi ý gần đây, to
 ## Kiến trúc
 
 - `backend/src/DiDau.Core`: chọn/lọc địa điểm, xếp lộ trình, giờ mở cửa, khóa cache và kiểm chứng lời dẫn. Không phụ thuộc ASP.NET hay EF.
-- `backend/src/DiDau.Infrastructure`: Google Places (New), Wikidata/Wikipedia, OpenAI Structured Outputs; PostgreSQL chỉ lưu cache tour tối giản, ID gần đây và Wiki, cleanup hàng ngày.
+- `backend/src/DiDau.Infrastructure`: Goong (gợi ý, địa chỉ), OpenStreetMap Overpass (tour), Wikidata/Wikipedia, OpenAI Structured Outputs; PostgreSQL chỉ lưu cache tour tối giản, ID gần đây và Wiki, cleanup hàng ngày.
 - `backend/src/DiDau.Api`: API, validation, CORS, rate limit theo IP.
 - `app`: Flutter web, dữ liệu đã lưu trong localStorage. Không đăng nhập, không nhúng API key.
 
@@ -19,7 +19,7 @@ Tại thư mục gốc, đặt mật khẩu PostgreSQL dành riêng cho môi tr�
 docker compose up -d postgres
 dotnet tool restore
 dotnet user-secrets set 'ConnectionStrings:Default' 'Host=localhost;Database=didau;Username=postgres;Password=<mật-khẩu-dev>' --project backend/src/DiDau.Api
-dotnet user-secrets set 'GooglePlaces:ApiKey' '<key>' --project backend/src/DiDau.Api
+dotnet user-secrets set 'Goong:ApiKey' '<key>' --project backend/src/DiDau.Api
 dotnet user-secrets set 'OpenAi:ApiKey' '<key>' --project backend/src/DiDau.Api
 dotnet user-secrets set 'OpenAi:Model' '<model-hỗ-trợ-Structured-Outputs>' --project backend/src/DiDau.Api
 dotnet user-secrets set 'Wiki:UserAgent' 'DiDau/0.1 (mailto:<email-liên-hệ-của-bạn>)' --project backend/src/DiDau.Api
@@ -29,9 +29,9 @@ dotnet ef database update --project backend/src/DiDau.Infrastructure --startup-p
 dotnet run --project backend/src/DiDau.Api --no-launch-profile --urls http://localhost:5000
 ```
 
-Không gửi key vào chat hoặc lưu trong client. File cấu hình mẫu nằm ở `backend/src/DiDau.Api/appsettings.Example.json`. Có thể dùng biến môi trường `GooglePlaces__ApiKey`, `OpenAi__ApiKey`, `OpenAi__Model`, `ConnectionStrings__Default`, `Wiki__UserAgent`, `Cors__AllowedOrigins__0`. Google project phải bật Places API (New).
+Không gửi key vào chat hoặc lưu trong client. File cấu hình mẫu nằm ở `backend/src/DiDau.Api/appsettings.Example.json`. Có thể dùng biến môi trường `Goong__ApiKey`, `OpenAi__ApiKey`, `OpenAi__Model`, `ConnectionStrings__Default`, `Wiki__UserAgent`, `Cors__AllowedOrigins__0`. OSM Overpass dùng User-Agent liên hệ từ cấu hình Wiki.
 
-Để chạy API bằng container, đặt thêm `GOOGLE_PLACES_API_KEY`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `WIKI_USER_AGENT`, `APP_ORIGIN` trong môi trường rồi `docker compose up --build -d`. Compose bật migration khi khởi động cho môi trường dev; production nên chạy migration riêng. Đặt API sau HTTPS; nếu có reverse proxy, cấu hình trusted forwarded headers trước khi sử dụng rate limit theo IP thực.
+Để chạy API bằng container, đặt thêm `GOONG_API_KEY`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `WIKI_USER_AGENT`, `APP_ORIGIN` trong môi trường rồi `docker compose up --build -d`. Compose bật migration khi khởi động cho môi trường dev; production nên chạy migration riêng. Đặt API sau HTTPS; nếu có reverse proxy, cấu hình trusted forwarded headers trước khi sử dụng rate limit theo IP thực.
 
 ## Chạy app
 
@@ -49,11 +49,39 @@ Build **có offline** từ thư mục gốc:
 
 Serve `app/build/web` bằng static web server qua HTTPS (localhost được chấp nhận khi dev). Script tạo service worker với manifest/hash của toàn bộ app shell và CanvasKit cục bộ. `flutter build web` đơn lẻ không tạo service worker riêng của dự án. Cần tải app online một lần và chờ cài cache xong trước khi offline. Cấu hình host để `index.html`, `sw.js` và `flutter_bootstrap.js` được revalidate. Bản mới được kích hoạt sau khi đóng các tab cũ.
 
-Mục đã lưu là bản chụp lúc lưu, thông tin giờ/giá có thể cũ. Xóa dữ liệu trình duyệt sẽ xóa mục lưu. Chỉ đường và mở nguồn cần Internet; xem bản chụp không gọi API. Font Roboto được đóng gói trong app (giấy phép tại `app/assets/fonts/LICENSE.txt`).
+Mục đã lưu giữ ID, tọa độ tối đa 30 ngày và lời dẫn Wiki; tên, địa chỉ, giờ, giá được tải lại khi mở. Offline vẫn đọc được lời dẫn. Không lưu đoạn đường xuất phát từ vị trí cá nhân. Xóa dữ liệu trình duyệt sẽ xóa mục lưu. Chỉ đường và mở nguồn cần Internet. Font Roboto được đóng gói trong app (giấy phép tại `app/assets/fonts/LICENSE.txt`).
 
 Chạy thử trên điện thoại qua HTTPS: cài `cloudflared`, cấu hình PostgreSQL/key như trên, rồi chạy `./scripts/run-mobile.ps1`. Script mở hai tunnel, build PWA, thiết lập CORS cho tiến trình API và in URL điện thoại; nhấn Enter để dừng các tiến trình do script tạo. Không tự động đánh dấu kiểm thử thiết bị thật là hoàn tất.
 
 ## Kiểm tra
+
+### Android native
+
+Đã thêm Android (`vn.didau.di_dau`, tên hiển thị **Đi Đâu**) dùng cùng code Flutter.
+Máy ảo truy cập backend trên máy tính qua `10.0.2.2`, không phải `localhost`.
+
+```powershell
+flutter emulators --launch Pixel_7
+cd app
+flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:5000/api
+flutter run -d emulator-5554 --dart-define=API_BASE_URL=http://10.0.2.2:5000/api
+```
+
+APK nằm tại `app/build/app/outputs/flutter-apk/app-debug.apk`. Manifest khai báo Internet và
+quyền vị trí foreground; HTTP chỉ cho địa chỉ loopback/emulator, API từ xa phải HTTPS.
+Bản release hiện dùng debug signing của Flutter để thử nghiệm; chưa dùng để phát hành lên store.
+Android lưu mục đã lưu bằng SharedPreferences; tắt backup để dữ liệu chỉ ở thiết bị hiện tại.
+
+Từ gốc repo, chạy `./scripts/test-android.ps1` để kiểm thử trên máy ảo đang bật. Script cấp quyền
+GPS và đặt tọa độ Hà Nội, rồi chạy integration test với HTTP fixture trong máy ảo: gợi ý,
+tour, lưu/bỏ lưu và đọc lời dẫn khi API tắt. Test dùng storage native thật và xóa dữ liệu lưu
+của app kiểm thử lúc bắt đầu; không gọi Goong/OpenAI, không thay thế kiểm chứng backend thật.
+
+Dùng `-Device emulator-5556` nếu máy ảo có ID khác (xem `flutter devices`). Nếu chưa có backend
+được cấu hình, có thể chạy `node scripts/android-fixture-server.cjs` để thao tác thủ công với dữ
+liệu demo được ghi nhãn rõ. Server fixture dùng cổng 5000; dừng nó trước khi chạy backend thật.
+Android dùng bộ định vị hệ thống cho thao tác lấy vị trí một lần; không cần vị trí nền.
+Trên Windows, incremental cache Kotlin bị tắt vì Pub cache và repo có thể ở hai ổ đĩa khác nhau.
 
 ```powershell
 dotnet test backend/DiDau.sln
@@ -83,4 +111,4 @@ Kết quả và các kiểm tra còn cần môi trường thật được ghi tr
 - Cache nearby chỉ lưu ID địa điểm theo ô tọa độ 0,002°. Tour cache không chứa vị trí người dùng, đoạn đường từ vị trí đó, tên/địa chỉ/giờ/giá/rating của Places. Chi tiết Places chỉ gộp trong cùng request, không cache giữa các request. Tọa độ địa điểm công khai có trong tour cache tối đa 7 ngày; đó không phải vị trí người dùng. Migration `RemovePersistentPlaceCache` xóa bảng cache Places cũ và làm rỗng cache tour cũ.
 - Mục tiêu latency p90, đánh giá hữu ích và kiểm chứng 50 tour cần chạy với tài khoản API và người dùng thật; test giả lập không chứng minh các chỉ số này.
 
-Tài liệu tích hợp: [Google Places](https://developers.google.com/maps/documentation/places/web-service/nearby-search), [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=chat), [Flutter offline/service workers](https://docs.flutter.dev/platform-integration/web/faq).
+Tài liệu tích hợp: [Goong REST](https://docs.goong.io/rest/), [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API), [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=chat), [Flutter offline/service workers](https://docs.flutter.dev/platform-integration/web/faq).

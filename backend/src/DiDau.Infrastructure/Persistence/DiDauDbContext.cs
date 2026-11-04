@@ -12,7 +12,7 @@ public sealed class CacheRow
 
 public sealed class DiDauDbContext(DbContextOptions<DiDauDbContext> options) : DbContext(options)
 {
-    public static readonly string[] Tables = ["tour_cache", "nearby_cache", "wiki_cache"];
+    public static readonly string[] Tables = ["tour_cache", "nearby_cache", "wiki_cache", "osm_cache"];
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         foreach (var table in Tables)

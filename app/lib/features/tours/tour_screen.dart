@@ -3,7 +3,7 @@ import '../../api/api_client.dart';
 import '../../api/models.dart';
 import '../../widgets/error_retry.dart';
 import '../../widgets/external_link.dart';
-import '../../widgets/google_attribution.dart';
+import '../../widgets/source_attribution.dart';
 import 'stop_screen.dart';
 import '../saved/save_button.dart';
 
@@ -52,7 +52,7 @@ class _TourScreenState extends State<TourScreen> {
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        const GoogleAttribution(),
+        const SourceAttribution(),
         Text(
           '${tour.stops.length} điểm dừng • ${tour.totalMinutes} phút',
           style: Theme.of(context).textTheme.headlineSmall,
@@ -90,7 +90,9 @@ class _TourScreenState extends State<TourScreen> {
                 trailing: IconButton(
                   tooltip: 'Chỉ đường',
                   icon: const Icon(Icons.directions),
-                  onPressed: () => openExternal(context, leg['directionsUrl']),
+                  onPressed: leg['directionsUrl'] is String
+                      ? () => openExternal(context, leg['directionsUrl'])
+                      : null,
                 ),
               ),
             ),

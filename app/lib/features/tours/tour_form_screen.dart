@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../location/current_location.dart';
 import '../../api/api_client.dart';
 import '../../api/models.dart';
 import '../../widgets/error_retry.dart';
-import '../../widgets/google_attribution.dart';
+import '../../widgets/source_attribution.dart';
 import 'tour_screen.dart';
 
 class TourFormScreen extends StatefulWidget {
@@ -79,11 +80,7 @@ class _TourFormScreenState extends State<TourFormScreen> {
           'Chưa có quyền vị trí. Tour sẽ bắt đầu tại điểm dừng đầu tiên.',
         );
       }
-      final p = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          timeLimit: Duration(seconds: 12),
-        ),
-      );
+      final p = await currentLocation();
       if (mounted) setState(() => location = GeoPoint(p.latitude, p.longitude));
     } catch (e) {
       if (mounted) {
@@ -136,7 +133,7 @@ class _TourFormScreenState extends State<TourFormScreen> {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      if (areas.isNotEmpty) const GoogleAttribution(),
+      if (areas.isNotEmpty) const SourceAttribution(),
       Text(
         'Một hành trình của riêng bạn',
         style: Theme.of(context).textTheme.headlineMedium,

@@ -9,20 +9,16 @@ public static class ToursEndpoints
 {
     public static void MapTours(this WebApplication app)
     {
-        app.MapGet("/api/cities/{cityId}/areas", async (string cityId, string? q, IPlacesClient places, ICacheStore cache, CancellationToken ct) =>
+        app.MapGet("/api/cities/{cityId}/areas", async (string cityId, string? q, IAttractionsClient attractions, CancellationToken ct) =>
         {
             var city = CityLocator.All.FirstOrDefault(c => c.Id == cityId);
             if (city is null) return Results.NotFound(new { code = "CITY_NOT_SUPPORTED", message = DomainException.CityNotSupported().Message });
             q = q?.Trim() ?? "";
             if (q.Length > 150) throw DomainException.Validation("Tên khu vực quá dài.");
-            // User-entered address queries are not persisted; only the public default area list is cached.
-            var key = "areas:" + cityId;
-            var ids = q.Length == 0 ? await cache.Get<string[]>("nearby_cache", key, ct) : null;
-            var items = ids is null
-                ? await places.TextSearch((q.Length == 0 ? "địa điểm nổi tiếng" : q) + " " + city.Name, city.Center, ct)
-                : (await Task.WhenAll(ids.Select(id => places.GetDetails(id, ct)))).OfType<DiDau.Core.Places.Place>().ToArray();
-            items = items.Where(p => CityLocator.Contains(city, p.Location) && p.BusinessStatus != DiDau.Core.Places.BusinessStatus.ClosedPermanently).ToArray();
-            if (q.Length == 0 && ids is null) await cache.Set("nearby_cache", key, items.Select(p => p.Id).ToArray(), CacheTtl.Nearby, ct);
+            // Famous areas come from OSM (cached by the adapter); the user's text only filters by name.
+            var items = (await attractions.Famous(city.Center, 8000, ct))
+                .Where(p => CityLocator.Contains(city, p.Location) && (q.Length == 0 || p.Name.Contains(q, StringComparison.OrdinalIgnoreCase)))
+                .Take(30);
             return Results.Ok(items.Select(p => new { p.Id, p.Name, p.Address, p.Location }));
         }).RequireRateLimiting("suggestions");
         app.MapPost("/api/tours", async (TourRequest request, TourService service, IClock clock, CancellationToken ct) =>

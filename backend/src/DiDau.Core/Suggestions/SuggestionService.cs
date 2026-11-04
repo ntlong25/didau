@@ -12,18 +12,21 @@ public sealed class SuggestionService(IPlacesClient places, ICacheStore cache, I
         if (request.Location is null || !request.Location.IsValid || !Enum.IsDefined(request.Need) || request.RadiusMeters is not (2000 or 5000))
             throw DomainException.Validation("Vị trí, nhu cầu hoặc bán kính không hợp lệ.");
         var city = CityLocator.Find(request.Location) ?? throw DomainException.CityNotSupported();
-        var key = CacheKey.Nearby(request.Location, request.Need.ToString(), request.RadiusMeters);
+        var key = "goong-v2:" + CacheKey.Nearby(request.Location, request.Need.ToString(), request.RadiusMeters);
         var ids = await cache.Get<string[]>("nearby_cache", key, ct);
         Place[] candidates;
         if (ids is null)
         {
             // Search a slightly larger rounded circle, then enforce actual radius per request.
             candidates = await places.NearbySearch(LocationRounding.Round(request.Location), NeedMapping.Types(request.Need), request.RadiusMeters + 160, ct);
+            candidates = candidates.Where(p => NeedMapping.Matches(p, request.Need)).ToArray();
             await cache.Set("nearby_cache", key, candidates.Select(p => p.Id).ToArray(), CacheTtl.Nearby, ct);
         }
         else candidates = (await Task.WhenAll(ids.Select(id => places.GetDetails(id, ct)))).OfType<Place>().ToArray();
         var items = candidates.DistinctBy(p => p.Id)
-            .Where(p => p.BusinessStatus != BusinessStatus.ClosedPermanently && NeedMapping.Matches(p, request.Need))
+            // Goong details omit categories; cached membership retains the original keyword match.
+            .Where(p => p.BusinessStatus != BusinessStatus.ClosedPermanently &&
+                (NeedMapping.Matches(p, request.Need) || (ids is not null && p.Types.Length == 0 && ids.Contains(p.Id))))
             .Select(p =>
             {
                 var state = p.BusinessStatus == BusinessStatus.ClosedTemporarily ? new OpeningState(false, null) : OpeningHours.Evaluate(p.OpeningHours, clock.UtcNow);

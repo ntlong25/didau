@@ -5,7 +5,7 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       ConnectionStrings__Default: Host=postgres;Database=didau;Username=postgres;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-      GooglePlaces__ApiKey: ${GOOGLE_PLACES_API_KEY:-}
+      Goong__ApiKey: ${GOONG_API_KEY:-}
       OpenAi__ApiKey: ${OPENAI_API_KEY:-}
       OpenAi__Model: ${OPENAI_MODEL:-}
       Wiki__UserAgent: ${WIKI_USER_AGENT:-}

@@ -101,13 +101,16 @@ class SavedStore {
       SavedItem(
         fullId,
         kind,
-        title,
+        kind == 'place'
+            ? 'Địa điểm đã lưu'
+            : 'Tour ${cityNames[snapshot['cityId']] ?? ''}'.trim(),
         at ?? DateTime.now().toUtc(),
         stripPlacesContent(kind, jsonDecode(jsonEncode(snapshot))),
       ),
     );
     await _write(items);
   });
+
   /// Rewrites storage so previously saved full snapshots and expired coordinates are removed.
   Future<void> compact() => _mutate(() async => _write(await list()));
   Future<void> remove(String id) => _mutate(() async {

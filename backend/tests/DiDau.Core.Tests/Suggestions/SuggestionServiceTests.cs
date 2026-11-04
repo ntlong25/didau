@@ -9,6 +9,23 @@ namespace DiDau.Core.Tests.Suggestions;
 
 public class SuggestionServiceTests
 {
+    [Fact]
+    public async Task CachedSearchRetainsQueryMatchWhenDetailsHaveNoCategory()
+    {
+        var service = Service();
+        var point = new GeoPoint(21.0288, 105.852);
+        places.NearbySearch(Arg.Any<GeoPoint>(), Arg.Any<string[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([TestData.Place()]);
+        places.GetDetails("p1", Arg.Any<CancellationToken>()).Returns(TestData.Place() with { Types = [] });
+        var first = await service.Get(new(point, Need.Coffee));
+        var call = cache.ReceivedCalls().Single(c => c.GetMethodInfo().Name == "Set");
+        var key = (string)call.GetArguments()[1]!;
+        var ids = (string[])call.GetArguments()[2]!;
+        cache.Get<string[]>("nearby_cache", key, Arg.Any<CancellationToken>()).Returns(ids);
+        var second = await service.Get(new(point, Need.Coffee));
+        Assert.Single(first.Items);
+        Assert.Single(second.Items);
+        await places.Received(1).NearbySearch(Arg.Any<GeoPoint>(), Arg.Any<string[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
     private readonly IPlacesClient places = Substitute.For<IPlacesClient>();
     private readonly ICacheStore cache = Substitute.For<ICacheStore>();
     private readonly IClock clock = Substitute.For<IClock>();
@@ -48,7 +65,7 @@ public class SuggestionServiceTests
         var result = await Service().Get(new(point, Need.Coffee, radius));
         Assert.Equal(expand, result.CanExpandRadius);
         await places.Received().NearbySearch(LocationRounding.Round(point), Arg.Any<string[]>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
-        await cache.Received().Set("nearby_cache", CacheKey.Nearby(point, "Coffee", radius), Arg.Any<string[]>(), CacheTtl.Nearby, Arg.Any<CancellationToken>());
+        await cache.Received().Set("nearby_cache", "goong-v2:" + CacheKey.Nearby(point, "Coffee", radius), Arg.Any<string[]>(), CacheTtl.Nearby, Arg.Any<CancellationToken>());
     }
     [Fact]
     public async Task BreakfastAtNightRequiresBreakfastEvidenceAndNextOpening()

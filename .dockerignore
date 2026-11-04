@@ -1,6 +1,8 @@
 **/bin/
 **/obj/
 .git/
+**/node_modules/
+artifacts/
 .claude/
 .agents/
 app/

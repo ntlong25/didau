@@ -37,7 +37,11 @@ class Place {
       json['location'] == null ? null : GeoPoint.fromJson(json['location']);
   String get mapsUri =>
       json['mapsUri'] ??
-      'https://www.google.com/maps/search/?api=1&query=Google&query_place_id=${Uri.encodeQueryComponent(id)}';
+      (id.startsWith('osm:')
+          ? 'https://www.openstreetmap.org/${id.substring(4)}'
+          : location == null
+          ? 'https://www.google.com/maps'
+          : 'https://www.google.com/maps/search/?api=1&query=${location!.lat},${location!.lng}');
   String? get price => const {
     'Inexpensive': 'Rẻ',
     'Moderate': 'Vừa',

@@ -11,7 +11,8 @@ public static class NeedMapping
     public static bool Matches(Place place, Need need) => need switch
     {
         Need.Breakfast => place.Types.Intersect(new[] { "breakfast_restaurant", "brunch_restaurant" }).Any(),
-        Need.Dinner => place.Types.Contains("restaurant") && OpeningHours.ServesDinner(place.OpeningHours),
+        // Goong has no opening hours; unknown hours are not treated as "closed for dinner".
+        Need.Dinner => place.Types.Contains("restaurant") && (place.OpeningHours is null || OpeningHours.ServesDinner(place.OpeningHours)),
         _ => place.Types.Intersect(Types(need)).Any()
     };
 }
