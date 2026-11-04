@@ -3,8 +3,9 @@ import 'package:geolocator/geolocator.dart';
 import '../../location/current_location.dart';
 import '../../api/api_client.dart';
 import '../../api/models.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/error_retry.dart';
-import '../../widgets/source_attribution.dart';
+import '../../widgets/ui.dart';
 
 class LocationPicker extends StatefulWidget {
   final ApiClient api;
@@ -26,6 +27,8 @@ class _LocationPickerState extends State<LocationPicker> {
   Object? error;
   bool busy = false;
   String? selected;
+  // Collapses to a one-line summary once a location is chosen.
+  bool editing = true;
   @override
   void initState() {
     super.initState();
@@ -53,6 +56,15 @@ class _LocationPickerState extends State<LocationPicker> {
     }
   }
 
+  void choose(String label, GeoPoint point) {
+    widget.onSelected(point);
+    setState(() {
+      selected = label;
+      results = [];
+      editing = false;
+    });
+  }
+
   Future<void> locate() async {
     setState(() {
       busy = true;
@@ -70,10 +82,7 @@ class _LocationPickerState extends State<LocationPicker> {
         );
       }
       final p = await currentLocation();
-      if (mounted) {
-        setState(() => selected = 'Vị trí hiện tại');
-        widget.onSelected(GeoPoint(p.latitude, p.longitude));
-      }
+      if (mounted) choose('Vị trí hiện tại', GeoPoint(p.latitude, p.longitude));
     } catch (e) {
       if (mounted) {
         setState(
@@ -90,7 +99,7 @@ class _LocationPickerState extends State<LocationPicker> {
   }
 
   Future<void> search() async {
-    if (city == null) return;
+    if (city == null || query.text.trim().length < 2) return;
     setState(() {
       busy = true;
       error = null;
@@ -106,63 +115,130 @@ class _LocationPickerState extends State<LocationPicker> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      OutlinedButton.icon(
-        onPressed: busy ? null : locate,
-        icon: const Icon(Icons.my_location),
-        label: const Text('Dùng vị trí hiện tại'),
-      ),
-      if (selected != null)
-        Text(
-          'Đã chọn: $selected',
-          style: TextStyle(color: Theme.of(context).colorScheme.primary),
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    if (!editing && selected != null) {
+      return Semantics(
+        button: true,
+        label: 'Đổi vị trí',
+        child: Card(
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => setState(() => editing = true),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 64),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpace.lg, AppSpace.sm, AppSpace.sm, AppSpace.sm),
+                child: Row(
+                  children: [
+                    const Icon(Icons.place, color: AppColors.terracotta),
+                    const SizedBox(width: AppSpace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Vị trí của bạn', style: t.labelMedium),
+                          Text(selected!, style: t.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                    TextButton(onPressed: () => setState(() => editing = true), child: const Text('Đổi')),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
-      if (cities != null)
-        DropdownButtonFormField<String>(
-          initialValue: city,
-          decoration: const InputDecoration(labelText: 'Hoặc chọn thành phố'),
-          items: cities!
-              .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
-              .toList(),
-          onChanged: busy
-              ? null
-              : (v) => setState(() {
-                  city = v;
-                  results = [];
-                }),
-        ),
-      TextField(
-        controller: query,
-        decoration: const InputDecoration(
-          labelText: 'Địa chỉ / khu vực',
-          hintText: 'Ví dụ: Hồ Hoàn Kiếm',
-        ),
-        onSubmitted: (_) => search(),
+      );
+    }
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.lagoonSoft,
+              foregroundColor: AppColors.lagoonDeep,
+            ),
+            onPressed: busy ? null : locate,
+            icon: const Icon(Icons.my_location),
+            label: const Text('Dùng vị trí hiện tại'),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpace.lg),
+            child: Row(
+              children: [
+                const Expanded(child: Divider()),
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+                    child: Text('hoặc tìm địa chỉ', style: t.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+                const Expanded(child: Divider()),
+              ],
+            ),
+          ),
+          if (cities != null)
+            SizedBox(
+              height: 64,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final c in cities!)
+                    Padding(
+                      padding: const EdgeInsets.only(right: AppSpace.sm),
+                      child: ChoiceChip(
+                        label: Text(c.name),
+                        selected: city == c.id,
+                        showCheckmark: true,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        materialTapTargetSize: MaterialTapTargetSize.padded,
+                        onSelected: busy
+                            ? null
+                            : (_) => setState(() {
+                                city = c.id;
+                                results = [];
+                              }),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          const SizedBox(height: AppSpace.md),
+          TextField(
+            controller: query,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              labelText: 'Địa chỉ / khu vực',
+              hintText: 'Ví dụ: Hồ Hoàn Kiếm, Chợ Bến Thành…',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: busy
+                  ? const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : IconButton(
+                      tooltip: 'Tìm',
+                      onPressed: city == null ? null : search,
+                      icon: const Icon(Icons.arrow_forward),
+                    ),
+            ),
+            onSubmitted: (_) => search(),
+          ),
+          if (error != null) ErrorRetry(error!, cities == null ? loadCities : search),
+          if (results.isNotEmpty) ...[
+            const SizedBox(height: AppSpace.sm),
+            for (final area in results)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.place_outlined, color: AppColors.lagoon),
+                title: Text(area['label'], style: t.bodyLarge),
+                onTap: () => choose(area['label'], GeoPoint.fromJson(area['location'])),
+              ),
+          ],
+        ],
       ),
-      TextButton.icon(
-        onPressed: busy || city == null ? null : search,
-        icon: const Icon(Icons.search),
-        label: const Text('Tìm khu vực'),
-      ),
-      if (busy) const LinearProgressIndicator(),
-      if (error != null)
-        ErrorRetry(error!, cities == null ? loadCities : search),
-      if (results.isNotEmpty) const SourceAttribution(),
-      ...results.map(
-        (area) => ListTile(
-          title: Text(area['label']),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            widget.onSelected(GeoPoint.fromJson(area['location']));
-            setState(() {
-              selected = area['label'];
-              results = [];
-            });
-          },
-        ),
-      ),
-    ],
-  );
+    );
+  }
 }

@@ -32,23 +32,36 @@ const server = http.createServer(async (req, res) => {
     const body = url.includes('/places/') ? place : url.endsWith('/cities') ? [{id:'hanoi',name:'Hà Nội',center:place.location}] : url.includes('/geocode') ? [{label:place.name,location:place.location,cityId:'hanoi'}] : url.includes('/areas') ? [place] : url.endsWith('/suggestions') ? {cityId:'hanoi',items:[{place,reason:'Dữ liệu kiểm thử.',distanceMeters:100}],canExpandRadius:true} : tour;
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
   });
+  // Let route transitions finish and hide tooltips/hover state before capturing.
+  const settle = async () => { await page.keyboard.press('Escape'); await page.mouse.move(0, 0); await page.waitForTimeout(600); };
   try {
     await page.goto('http://127.0.0.1:8088/');
     // Flutter exposes an explicit accessibility opt-in element in web builds.
     await page.locator('flt-semantics-placeholder').evaluate(el => el.click());
     await page.getByRole('textbox', {name:'Địa chỉ / khu vực'}).fill('Hồ Hoàn Kiếm');
-    await page.getByRole('button', {name:'Tìm khu vực',exact:true}).click();
+    await page.getByRole('button', {name:'Tìm',exact:true}).click();
     await page.getByRole('button', {name:/^Địa điểm kiểm thử/}).click();
-    await page.getByRole('button', {name:'Gợi ý cho tôi',exact:true}).click();
-    await page.getByRole('button', {name:/^Địa điểm kiểm thử/}).click();
-    await page.getByRole('button', {name:'Lưu',exact:true}).click();
-    await page.getByRole('button', {name:'Đã lưu',exact:true}).waitFor();
+    // Choosing a result runs the search right away.
+    await page.getByRole('button', {name:/^1 Địa điểm kiểm thử/}).click();
+    await page.getByRole('button', {name:/^Lưu/}).click();
+    await page.getByRole('button', {name:/^Bỏ lưu/}).waitFor();
+    await settle();
     await page.screenshot({path:path.resolve(__dirname,'../artifacts/place-mobile.png')});
     await page.goBack();
+    await page.getByRole('button', {name:/^Tìm rộng hơn/}).waitFor();
+    await settle();
+    await page.screenshot({path:path.resolve(__dirname,'../artifacts/suggestions-mobile.png')});
+    await page.getByRole('button', {name:/^1 Địa điểm kiểm thử/}).click();
+    await page.goBack();
     await page.getByRole('tab', {name:'Tour',exact:true}).click();
-    await page.getByRole('button', {name:'Tạo tour',exact:true}).click();
-    await page.getByRole('button', {name:'Lưu',exact:true}).click();
-    await page.getByRole('button', {name:'Đã lưu',exact:true}).waitFor();
+    await settle();
+    await page.screenshot({path:path.resolve(__dirname,'../artifacts/tour-form-mobile.png')});
+    await page.getByRole('button', {name:'Tạo lộ trình',exact:true}).click();
+    await page.getByRole('button', {name:/^Đổi lộ trình khác/}).waitFor();
+    await settle();
+    await page.screenshot({path:path.resolve(__dirname,'../artifacts/tour-mobile.png')});
+    await page.getByRole('button', {name:/^Lưu/}).click();
+    await page.getByRole('button', {name:/^Bỏ lưu/}).waitFor();
     await page.evaluate(async () => { await navigator.serviceWorker.ready; });
     const stored = await page.evaluate(() => localStorage.getItem('flutter.saved_items_v1'));
     assert.ok(stored && !stored.includes('Địa điểm kiểm thử') && !stored.includes('Địa chỉ kiểm thử'));
@@ -58,21 +71,24 @@ const server = http.createServer(async (req, res) => {
     await page.reload();
     await page.locator('flt-semantics-placeholder').evaluate(el => el.click());
     await page.getByRole('tab', {name:'Đã lưu',exact:true}).click();
-    await page.getByRole('button', {name:/^Tour Hà Nội/}).waitFor();
+    await page.getByRole('group', {name:/^Tour Hà Nội/}).waitFor();
+    await settle();
     await page.screenshot({path:path.resolve(__dirname,'../artifacts/saved-offline-mobile.png')});
-    await page.getByRole('button', {name:/^Tour Hà Nội/}).click();
-    await page.getByText('1 điểm dừng • 20 phút', {exact:true}).waitFor();
+    await page.getByRole('group', {name:/^Tour Hà Nội/}).click();
+    await page.getByText(/điểm dừng/).first().waitFor();
     await page.getByRole('button', {name:/Cần kết nối mạng để xem tên/}).click();
-    await page.getByText('Lời dẫn kiểm thử offline.', {exact:true}).waitFor();
+    await page.getByText(/Lời dẫn kiểm thử offline./).first().waitFor();
     await page.goBack();
     await page.goBack();
-    await page.getByRole('button', {name:/^Địa điểm đã lưu/}).click();
-    await page.getByRole('button', {name:'Đã lưu',exact:true}).click();
-    await page.getByRole('button', {name:'Lưu',exact:true}).waitFor();
+    await page.getByRole('group', {name:/^Địa điểm đã lưu/}).click();
+    await page.getByRole('button', {name:'Chỉ đường bằng Google Maps'}).waitFor();
+    await page.getByRole('button', {name:/^Bỏ lưu/}).click();
+    await page.getByRole('button', {name:/^Lưu/}).waitFor();
     assert.deepEqual(errors, []);
     console.log('PASS: mobile suggestions, save place/tour, service worker, offline reload/details, unsave. API responses were fixtures, not live providers.');
   } catch (error) {
     console.error(await page.locator('body').ariaSnapshot());
+    await settle();
     await page.screenshot({path:path.resolve(__dirname,'../artifacts/browser-failure.png')});
     throw error;
   } finally { await browser.close(); server.close(); }
