@@ -4,6 +4,7 @@ import 'api/api_client.dart';
 import 'features/suggestions/suggestions_screen.dart';
 import 'features/tours/tour_form_screen.dart';
 import 'features/saved/saved_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() => runApp(const DiDauApp());
 
@@ -16,12 +17,7 @@ class DiDauApp extends StatelessWidget {
     locale: const Locale('vi'),
     supportedLocales: const [Locale('vi')],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    theme: ThemeData(
-      fontFamily: 'RobotoLocal',
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff167565)),
-      scaffoldBackgroundColor: const Color(0xfffaf8f3),
-    ),
+    theme: buildAppTheme(),
     home: const HomeScreen(),
   );
 }
@@ -35,6 +31,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int tab = 0;
   final api = ApiClient();
+  // Saved list is rebuilt on each visit so new saves show up.
+  int savedVisits = 0;
   @override
   void dispose() {
     api.dispose();
@@ -43,28 +41,43 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Đi Đâu')),
-    body: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
-        child: tab == 0
-            ? SuggestionsScreen(api: api)
-            : tab == 1
-            ? TourFormScreen(api: api)
-            : SavedScreen(api: api),
+    body: SafeArea(
+      bottom: false,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          // IndexedStack keeps form input and results when switching tabs.
+          child: IndexedStack(
+            index: tab,
+            children: [
+              SuggestionsScreen(api: api),
+              TourFormScreen(api: api),
+              SavedScreen(key: ValueKey(savedVisits), api: api),
+            ],
+          ),
+        ),
       ),
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: tab,
-      onDestinationSelected: (v) => setState(() => tab = v),
+      onDestinationSelected: (v) => setState(() {
+        if (v == 2 && tab != 2) savedVisits++;
+        tab = v;
+      }),
       destinations: const [
         NavigationDestination(
           icon: Icon(Icons.near_me_outlined),
+          selectedIcon: Icon(Icons.near_me),
           label: 'Gợi ý nhanh',
         ),
-        NavigationDestination(icon: Icon(Icons.route_outlined), label: 'Tour'),
+        NavigationDestination(
+          icon: Icon(Icons.route_outlined),
+          selectedIcon: Icon(Icons.route),
+          label: 'Tour',
+        ),
         NavigationDestination(
           icon: Icon(Icons.bookmark_outline),
+          selectedIcon: Icon(Icons.bookmark),
           label: 'Đã lưu',
         ),
       ],

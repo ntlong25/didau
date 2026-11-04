@@ -90,27 +90,35 @@ void main() {
     app.main();
     await tester.pumpAndSettle();
     // Runner grants foreground permission and injects a Hanoi GPS fix via adb.
+    Future<void> tapTooltip(String tooltip) async {
+      await tester.tap(find.byTooltip(tooltip).first);
+      await tester.pumpAndSettle();
+    }
+
     await tap('Dùng vị trí hiện tại');
     expect(
-      find.text('Đã chọn: Vị trí hiện tại'),
+      find.text('Vị trí hiện tại'),
       findsOneWidget,
       reason:
           'Permission: ${await Geolocator.checkPermission()}, service: ${await Geolocator.isLocationServiceEnabled()}, UI: ${tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).join(' | ')}',
     );
+    await tap('Đổi');
     await tester.enterText(find.byType(TextField).first, 'Hồ Hoàn Kiếm');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tap('Tìm khu vực');
+    await tapTooltip('Tìm');
+    // Choosing a result runs the search right away (no extra button).
     await tap('Điểm kiểm thử Android');
-    await tap('Gợi ý cho tôi');
-    expect(find.text('Đã chọn: Điểm kiểm thử Android'), findsOneWidget);
-    await tap('Điểm kiểm thử Android');
-    await tap('Lưu');
-    expect(find.text('Đã lưu'), findsOneWidget);
+    expect(find.text('Gợi ý cho bạn'), findsOneWidget);
+    final card = find.text('Điểm kiểm thử Android').last;
+    await tester.ensureVisible(card);
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    await tapTooltip('Lưu');
+    expect(find.byTooltip('Bỏ lưu'), findsOneWidget);
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
     await tap('Tour');
-    await tap('Tạo tour');
-    await tap('Lưu');
+    await tap('Tạo lộ trình');
+    await tapTooltip('Lưu');
     expect((await SavedStore().list()).length, 2);
     expect(prefs.getString(SavedStore.key), isNot(contains('Địa chỉ fixture')));
     await server.close(force: true);
@@ -120,7 +128,8 @@ void main() {
     await tester.pumpAndSettle();
     await tap('Đã lưu');
     await tap('Tour Hà Nội');
-    expect(find.text('1 điểm dừng • 20 phút'), findsOneWidget);
+    expect(find.text('điểm dừng'), findsOneWidget);
+    expect(find.text('20 phút'), findsOneWidget);
     await tap('Cần kết nối mạng để xem tên');
     expect(find.text('Lời dẫn offline Android.'), findsOneWidget);
     await tester.tap(find.byType(BackButton));
@@ -128,8 +137,8 @@ void main() {
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
     await tap('Địa điểm đã lưu');
-    await tap('Đã lưu');
-    expect(find.text('Lưu'), findsOneWidget);
+    await tapTooltip('Bỏ lưu');
+    expect(find.byTooltip('Lưu'), findsOneWidget);
     expect((await SavedStore().list()).length, 1);
     expect(tester.takeException(), isNull);
   });
