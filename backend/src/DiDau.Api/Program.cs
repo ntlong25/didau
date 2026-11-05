@@ -70,6 +70,10 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
         BadHttpRequestException => (400, "VALIDATION_ERROR", "Dữ liệu không hợp lệ. Hãy kiểm tra các lựa chọn."),
         _ => (502, "UPSTREAM_ERROR", "Chưa thể lấy dữ liệu. Vui lòng thử lại sau.")
     };
+    if (status == 502 && error is not null)
+        // Type and message only: no request URLs (they carry provider keys) and no user coordinates.
+        context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("DiDau.Upstream")
+            .LogWarning("Upstream failure on {Path}: {Type}: {Message}", context.Request.Path, error.GetType().Name, error.Message);
     context.Response.StatusCode = status;
     await context.Response.WriteAsJsonAsync(new { type = "about:blank", title = message, status, code, message });
 }));

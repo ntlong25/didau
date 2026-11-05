@@ -37,11 +37,13 @@ public class ProviderTests
         {
             var url = Uri.UnescapeDataString(request.RequestUri!.ToString());
             Assert.Contains("api_key=test-token", url);
+            Assert.NotEmpty(request.Headers.UserAgent.ToString());
             if (url.Contains("Place/AutoComplete"))
             {
-                Assert.Contains("input=cà phê", url); Assert.Contains("radius=3", url); Assert.Contains("location=21,105", url);
-                return Task.FromResult("{\"status\":\"OK\",\"predictions\":[{\"place_id\":\"g1\"},{\"place_id\":\"g1\"}]}");
+                Assert.Contains("input=cà phê", url); Assert.Contains("radius=3", url); Assert.Contains("location=21,105", url); Assert.Contains("origin=21,105", url);
+                return Task.FromResult("{\"status\":\"OK\",\"predictions\":[{\"place_id\":\"g1\",\"distance_meters\":900,\"types\":[\"cafe\"]},{\"place_id\":\"far\",\"distance_meters\":90000,\"types\":[\"cafe\"]},{\"place_id\":\"shop\",\"distance_meters\":100,\"types\":[\"establishment\"]}]}");
             }
+            Assert.DoesNotContain("place_id=far", url); Assert.DoesNotContain("place_id=shop", url);
             return Task.FromResult(GoongDetail);
         }));
         var client = new GoongPlacesClient(http, Config(new() { ["Goong:ApiKey"] = "test-token" }), Substitute.For<IClock>());
@@ -49,6 +51,46 @@ public class ProviderTests
         Assert.Equal("Cà phê Giảng", place.Name); Assert.Equal("39 Nguyễn Hữu Huân", place.Address);
         Assert.Contains("cafe", place.Types);
         Assert.Null(place.OpeningHours); Assert.Null(place.PriceLevel); Assert.Null(place.Rating);
+    }
+    [Fact]
+    public async Task OverpassFallsBackToNextMirrorWhenBusy()
+    {
+        var hosts = new List<string>();
+        using var http = new HttpClient(new StatusHandler2(request =>
+        {
+            hosts.Add(request.RequestUri!.Host);
+            return request.RequestUri.Host == "busy.test"
+                ? (HttpStatusCode.BadGateway, "busy")
+                : (HttpStatusCode.OK, "{\"elements\":[{\"type\":\"node\",\"id\":7,\"lat\":21.03,\"lon\":105.85,\"tags\":{\"name\":\"Đền\"}}]}");
+        }));
+        var cache = Substitute.For<ICacheStore>();
+        cache.Get<Place[]>(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Place[]?)null);
+        var config = Config(new() { ["Osm:UserAgent"] = "ua contact", ["Osm:OverpassUrls:0"] = "https://busy.test/api", ["Osm:OverpassUrls:1"] = "https://ok.test/api" });
+        var client = new OverpassClient(http, cache, config, Substitute.For<IClock>());
+        Assert.Single(await client.Famous(new(21.03, 105.85), 8000));
+        Assert.Equal(["busy.test", "ok.test"], hosts);
+    }
+    private sealed class StatusHandler2(Func<HttpRequestMessage, (HttpStatusCode, string)> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var (status, body) = respond(request);
+            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+        }
+    }
+    [Fact]
+    public async Task GoongRetriesAfterTooManyRequests()
+    {
+        var calls = 0;
+        using var http = new HttpClient(new StatusHandler(() => ++calls == 1 ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK, GoongDetail));
+        var client = new GoongPlacesClient(http, Config(new() { ["Goong:ApiKey"] = "k" }), Substitute.For<IClock>());
+        Assert.Equal("g1", (await client.GetDetails("g1"))!.Id);
+        Assert.Equal(2, calls);
+    }
+    private sealed class StatusHandler(Func<HttpStatusCode> status, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status()) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
     }
     [Fact]
     public async Task GoongZeroResultsIsEmptyAndErrorStatusThrows()
