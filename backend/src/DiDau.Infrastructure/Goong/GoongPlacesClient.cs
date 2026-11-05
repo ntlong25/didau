@@ -15,21 +15,25 @@ namespace DiDau.Infrastructure.Goong;
 public sealed class GoongPlacesClient(HttpClient http, IConfiguration config, IClock clock) : IPlacesClient
 {
     private const string BaseUrl = "https://rsapi.goong.io/";
-    private const int MaxResults = 10;
+    // Each result costs one Detail call against the account quota (seen: 1000/day), so keep this small.
+    private const int MaxResults = 6;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Task<Place?>>> details = new();
 
-    // Goong has no type filter, so each requested type is searched by a Vietnamese keyword.
-    private static readonly Dictionary<string, string> Keywords = new()
+    // Goong has no type filter, so each requested type is searched by short Vietnamese keywords.
+    // Long phrases match unrelated names far away (e.g. "Thiết bị nhà hàng"), so keep them short.
+    private static readonly Dictionary<string, string[]> Keywords = new()
     {
-        ["cafe"] = "cà phê", ["coffee_shop"] = "cà phê", ["breakfast_restaurant"] = "quán ăn sáng",
-        ["brunch_restaurant"] = "bánh mì phở", ["restaurant"] = "nhà hàng quán ăn"
+        ["cafe"] = ["cà phê"], ["coffee_shop"] = ["cà phê"], ["breakfast_restaurant"] = ["phở", "bánh mì"],
+        ["brunch_restaurant"] = ["phở", "bánh mì"], ["restaurant"] = ["quán ăn", "nhà hàng"]
     };
 
     public async Task<Place[]> NearbySearch(GeoPoint location, string[] types, int radiusMeters, CancellationToken ct = default)
     {
-        var groups = await Task.WhenAll(types.Select(t => Keywords.GetValueOrDefault(t, t)).Distinct().Select(async keyword =>
-            (await AutoComplete(keyword, location, radiusMeters, ct)).Select(p => p with { Types = types }).ToArray()));
-        return groups.SelectMany(g => g).DistinctBy(p => p.Id).ToArray();
+        // Keywords run one after another: Goong rate-limits bursts (HTTP 429).
+        var found = new List<Place>();
+        foreach (var keyword in types.SelectMany(t => Keywords.GetValueOrDefault(t, [t])).Distinct())
+            found.AddRange((await AutoComplete(keyword, location, radiusMeters, ct, maxDistanceMeters: radiusMeters, onlyFood: true)).Select(p => p with { Types = types }));
+        return found.DistinctBy(p => p.Id).ToArray();
     }
 
     public Task<Place[]> TextSearch(string query, GeoPoint center, CancellationToken ct = default) =>
@@ -38,23 +42,34 @@ public sealed class GoongPlacesClient(HttpClient http, IConfiguration config, IC
     public Task<Place?> GetDetails(string id, CancellationToken ct = default) =>
         details.GetOrAdd(id, key => new Lazy<Task<Place?>>(() => FetchDetails(key, ct))).Value;
 
-    private async Task<Place[]> AutoComplete(string input, GeoPoint center, int radiusMeters, CancellationToken ct)
+    // Prediction types that mean "a place to eat or drink"; keyword matches like "Photocopy" for "phở" are dropped.
+    private static readonly HashSet<string> FoodTypes = ["restaurant", "cafe", "food", "meal_delivery", "meal_takeaway", "bakery", "bar"];
+
+    private async Task<Place[]> AutoComplete(string input, GeoPoint center, int radiusMeters, CancellationToken ct, int? maxDistanceMeters = null, bool onlyFood = false)
     {
         // Goong documents radius in kilometres.
         var radiusKm = Math.Max(1, (int)Math.Ceiling(radiusMeters / 1000.0));
         using var json = await Get("Place/AutoComplete", new()
         {
             ["input"] = input, ["location"] = Point(center), ["radius"] = radiusKm.ToString(CultureInfo.InvariantCulture),
-            ["limit"] = MaxResults.ToString(CultureInfo.InvariantCulture)
+            // origin makes Goong return distance_meters, so far results are dropped before any Detail call.
+            ["origin"] = Point(center), ["limit"] = "10"
         }, ct);
         if (json is null || !json.RootElement.TryGetProperty("predictions", out var predictions)) return [];
-        var ids = predictions.EnumerateArray().Select(p => p.GetProperty("place_id").GetString()).OfType<string>().Distinct().Take(MaxResults);
+        var ids = predictions.EnumerateArray()
+            .Where(p => maxDistanceMeters is null || !p.TryGetProperty("distance_meters", out var d) || d.ValueKind != JsonValueKind.Number || d.GetDouble() <= maxDistanceMeters)
+            .Where(p => !onlyFood || (p.TryGetProperty("types", out var t) && t.ValueKind == JsonValueKind.Array && t.EnumerateArray().Any(x => FoodTypes.Contains(x.GetString() ?? ""))))
+            .Select(p => p.GetProperty("place_id").GetString()).OfType<string>().Distinct().Take(MaxResults);
         // Autocomplete has no coordinates; each prediction needs one Detail call (bounded concurrency).
-        using var gate = new SemaphoreSlim(4);
+        using var gate = new SemaphoreSlim(2);
         var places = await Task.WhenAll(ids.Select(async id =>
         {
             await gate.WaitAsync(ct);
-            try { return await GetDetails(id, ct); } finally { gate.Release(); }
+            // One failing Detail must not fail the whole search.
+            try { return await GetDetails(id, ct); }
+            // Includes malformed results (missing geometry/name) that fail mapping.
+            catch (Exception e) when (e is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException) { return null; }
+            finally { gate.Release(); }
         }));
         return places.OfType<Place>().ToArray();
     }
@@ -71,7 +86,20 @@ public sealed class GoongPlacesClient(HttpClient http, IConfiguration config, IC
         if (string.IsNullOrWhiteSpace(key)) throw new HttpRequestException("Goong configuration missing.");
         query["api_key"] = key;
         var url = BaseUrl + path + "?" + string.Join('&', query.Select(kv => kv.Key + "=" + Uri.EscapeDataString(kv.Value)));
-        using var response = await http.GetAsync(url, ct);
+        HttpResponseMessage response;
+        for (var attempt = 0; ; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            // Goong's CDN rejects requests without a User-Agent (403, error 1010).
+            request.Headers.TryAddWithoutValidation("User-Agent", config["Goong:UserAgent"] ?? "DiDau/0.1");
+            response = await http.SendAsync(request, ct);
+            if (response.StatusCode != HttpStatusCode.TooManyRequests || attempt >= 2) break;
+            // Short backoff: Goong limits bursts per second, not just the daily quota.
+            var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromMilliseconds(400 * (attempt + 1));
+            response.Dispose();
+            await Task.Delay(wait < TimeSpan.FromSeconds(2) ? wait : TimeSpan.FromSeconds(2), ct);
+        }
+        using var _ = response;
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
         response.EnsureSuccessStatusCode();
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));

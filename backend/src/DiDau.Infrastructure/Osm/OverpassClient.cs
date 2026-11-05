@@ -69,18 +69,47 @@ public sealed class OverpassClient(HttpClient http, ICacheStore cache, IConfigur
     {
         var userAgent = config["Osm:UserAgent"] ?? config["Wiki:UserAgent"];
         if (string.IsNullOrWhiteSpace(userAgent)) throw new HttpRequestException("OSM contact User-Agent is not configured.");
-        using var request = new HttpRequestMessage(HttpMethod.Post, config["Osm:OverpassUrl"] ?? "https://overpass-api.de/api/interpreter")
+        var body = $"[out:json][timeout:20];({statements});out body center 150;";
+        // Public Overpass servers are often at capacity (502/504): fail fast and try the next mirror.
+        string? text = null;
+        HttpRequestException? last = null;
+        foreach (var url in Endpoints(config))
         {
-            Content = new FormUrlEncodedContent([new("data", $"[out:json][timeout:20];({statements});out body center 150;")])
-        };
-        request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
-        using var response = await http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            attempt.CancelAfter(AttemptTimeout);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new FormUrlEncodedContent([new("data", body)]) };
+                request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+                using var response = await http.SendAsync(request, attempt.Token);
+                response.EnsureSuccessStatusCode();
+                text = await response.Content.ReadAsStringAsync(attempt.Token);
+                break;
+            }
+            catch (HttpRequestException e) { last = e; }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { last = new HttpRequestException("Overpass mirror timed out."); }
+        }
+        if (text is null) throw last ?? new HttpRequestException("No Overpass endpoint configured.");
+        using var json = JsonDocument.Parse(text);
         if (json.RootElement.TryGetProperty("remark", out _))
             throw new HttpRequestException("Overpass returned an incomplete response.");
         var now = clock.UtcNow;
         return json.RootElement.GetProperty("elements").EnumerateArray().Select(e => Map(e, now)).OfType<Place>().DistinctBy(p => p.Id).ToArray();
+    }
+
+    private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(12);
+    private static readonly string[] DefaultEndpoints =
+    [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+    ];
+    // Osm:OverpassUrls (array) or Osm:OverpassUrl (single) override the public mirrors, e.g. a self-hosted instance.
+    private static string[] Endpoints(IConfiguration config)
+    {
+        var list = config.GetSection("Osm:OverpassUrls").GetChildren().Select(c => c.Value).OfType<string>().ToArray();
+        if (list.Length > 0) return list;
+        return config["Osm:OverpassUrl"] is { Length: > 0 } single ? [single] : DefaultEndpoints;
     }
 
     public static Place? Map(JsonElement e, DateTimeOffset now)
